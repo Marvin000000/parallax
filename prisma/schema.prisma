@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")] // Requires Prisma 5.15+
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Clustering Data
+  clusterId     Int       @default(0) // 0 = Unassigned/New
+  clusterLabel  String?   // e.g. "Cluster A", "Techno-Optimist"
+  // Note: embedding vector is handled via raw SQL or unsupported type if needed, 
+  // but with previewFeatures we can try to use it. For now, we keep it simple.
+  
+  posts         Post[]
+  comments      Comment[]
+  votes         Vote[]
+}
+
+model Post {
+  id          String    @id @default(cuid())
+  title       String
+  url         String?   // External link
+  content     String?   // Text body
+  published   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  
+  // Snapshot of the author's cluster when they posted (to prevent drift)
+  authorClusterId Int?
+
+  comments    Comment[]
+  votes       Vote[]
+  tags        TagsOnPosts[]
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  posts TagsOnPosts[]
+}
+
+model TagsOnPosts {
+  post       Post     @relation(fields: [postId], references: [id])
+  postId     String
+  tag        Tag      @relation(fields: [tagId], references: [id])
+  tagId      String
+  assignedAt DateTime @default(now())
+  assignedBy String   // "system" or userId
+
+  @@id([postId, tagId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id])
+  
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  
+  parentId  String?
+  parent    Comment? @relation("CommentToComment", fields: [parentId], references: [id])
+  children  Comment[] @relation("CommentToComment")
+  
+  votes     Vote[]
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  value     Int      // 1 for upvote, -1 for downvote
+  createdAt DateTime @default(now())
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  postId    String?
+  post      Post?    @relation(fields: [postId], references: [id])
+  
+  commentId String?
+  comment   Comment? @relation(fields: [commentId], references: [id])
+
+  @@unique([userId, postId])
+  @@unique([userId, commentId])
+}

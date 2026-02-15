@@ -1,0 +1,33 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { postId, content, parentId } = await req.json();
+
+  if (!postId || !content) {
+    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+  }
+
+  const comment = await prisma.comment.create({
+    data: {
+      content,
+      postId,
+      authorId: session.user.id,
+      parentId: parentId || undefined
+    },
+    include: {
+      author: true
+    }
+  });
+
+  return NextResponse.json(comment);
+}

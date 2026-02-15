@@ -1,0 +1,42 @@
+name: Daily Content Mirror
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Every day at 8:00 AM UTC
+  workflow_dispatch: # Manual trigger button
+
+jobs:
+  mirror-content:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+  cluster-users:
+    runs-on: ubuntu-latest
+    needs: mirror-content # Run AFTER new content arrives
+    if: always()
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Run Cluster Script
+        run: npx ts-node scripts/cluster.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
