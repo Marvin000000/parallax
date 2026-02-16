@@ -8,6 +8,12 @@ export function EditPostButton({ post }: { post: any }) {
   const { data: session } = useSession();
   const [isEditing, setIsEditing] = useState(false);
 
+  const handleDelete = async () => {
+    if (!confirm("Delete this post?")) return;
+    await fetch(`/api/posts?id=${post.id}`, { method: 'DELETE' });
+    window.location.href = '/'; // Redirect to home
+  };
+
   // Only show if author
   if (session?.user?.id !== post.authorId) return null;
 
@@ -18,6 +24,12 @@ export function EditPostButton({ post }: { post: any }) {
         className="text-xs text-slate-500 hover:text-white underline ml-4"
       >
         Edit
+      </button>
+      <button 
+        onClick={handleDelete}
+        className="text-xs text-red-500 hover:text-red-400 underline ml-2"
+      >
+        Delete
       </button>
 
       {isEditing && (

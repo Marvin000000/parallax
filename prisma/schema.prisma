@@ -36,6 +36,7 @@ model Post {
   published   Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  deleted     Boolean   @default(false)
   
   authorId    String
   author      User      @relation(fields: [authorId], references: [id])
@@ -70,6 +71,7 @@ model Comment {
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deleted   Boolean  @default(false)
   
   postId    String
   post      Post     @relation(fields: [postId], references: [id])

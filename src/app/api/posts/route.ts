@@ -58,3 +58,29 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
+  if (!id) return NextResponse.json({ error: "Missing ID" }, { status: 400 });
+
+  const post = await prisma.post.findUnique({ where: { id } });
+  if (!post) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (post.authorId !== session.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // Soft Delete
+  const deleted = await prisma.post.update({
+    where: { id },
+    data: { 
+      deleted: true,
+      title: "[Deleted]",
+      content: "[Deleted]",
+      url: null // Clear URL to stop clicks
+    }
+  });
+
+  return NextResponse.json(deleted);
+}

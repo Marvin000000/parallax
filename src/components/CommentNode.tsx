@@ -11,6 +11,7 @@ type CommentWithChildren = {
   authorId: string;
   author: { id: string; name: string | null; clusterLabel: string | null };
   createdAt: Date;
+  deleted: boolean;
   votes: { value: number }[];
   _count: { votes: number };
   children: CommentWithChildren[];
@@ -52,6 +53,13 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
     window.location.reload();
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Are you sure? This cannot be undone.")) return;
+    
+    await fetch(`/api/comments?id=${comment.id}`, { method: 'DELETE' });
+    window.location.reload();
+  };
+
   const userVote = comment.votes?.[0]?.value || 0;
   const score = comment._count.votes;
   const isAuthor = session?.user?.id === comment.authorId;
@@ -74,8 +82,8 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
 
         <div className="flex-1">
           <div className="flex items-baseline space-x-2 text-xs text-slate-400">
-            <span className="font-bold text-slate-200">{comment.author.name || 'Anonymous'}</span>
-            <span className="bg-slate-800 px-1 rounded">{comment.author.clusterLabel || 'Observer'}</span>
+            <span className="font-bold text-slate-200">{comment.deleted ? '[deleted]' : (comment.author.name || 'Anonymous')}</span>
+            {!comment.deleted && <span className="bg-slate-800 px-1 rounded">{comment.author.clusterLabel || 'Observer'}</span>}
             <span>{new Date(comment.createdAt).toLocaleDateString()}</span>
           </div>
 
@@ -92,15 +100,20 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
                </div>
              </form>
           ) : (
-             <div className="mt-1 text-slate-300 text-sm whitespace-pre-wrap">{comment.content}</div>
+             <div className={`mt-1 text-sm whitespace-pre-wrap ${comment.deleted ? 'text-slate-500 italic' : 'text-slate-300'}`}>{comment.content}</div>
           )}
 
+          {!comment.deleted && (
           <div className="mt-2 flex items-center space-x-4 text-xs text-slate-500">
             <button onClick={() => setReplyOpen(!replyOpen)} className="hover:text-white font-bold">Reply</button>
             {isAuthor && (
-              <button onClick={() => setIsEditing(true)} className="hover:text-white">Edit</button>
+              <>
+                <button onClick={() => setIsEditing(true)} className="hover:text-white">Edit</button>
+                <button onClick={handleDelete} className="hover:text-red-400">Delete</button>
+              </>
             )}
           </div>
+          )}
 
           {replyOpen && (
             <form onSubmit={handleReply} className="mt-2">
