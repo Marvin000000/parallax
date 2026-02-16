@@ -1,4 +1,13 @@
+import { AuthStatus } from '@/components/AuthStatus';
+import { FeedFilter } from '@/components/FeedFilter';
+import { AdCard } from '@/components/AdCard';
+import { SubmitButton } from '@/components/SubmitButton';
 import { VoteButton } from '@/components/VoteButton';
+import { PrismaClient } from '@prisma/client';
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { Suspense } from 'react';
+import Link from 'next/link';
 
 const prisma = new PrismaClient();
 
@@ -60,17 +69,6 @@ export default async function Home({
         <Suspense fallback={<div className="h-8 w-32 bg-slate-800 rounded animate-pulse"></div>}>
            <FeedFilter />
         </Suspense>
-import { SubmitButton } from '@/components/SubmitButton';
-
-// ... (rest of imports)
-
-// ... (rest of Home)
-
-      {/* Feed Controls */}
-      <div className="max-w-4xl mx-auto flex justify-between items-center mb-6">
-        <Suspense fallback={<div className="h-8 w-32 bg-slate-800 rounded animate-pulse"></div>}>
-           <FeedFilter />
-        </Suspense>
         
         <SubmitButton />
       </div>
@@ -107,14 +105,9 @@ import { SubmitButton } from '@/components/SubmitButton';
                <div className="mt-3 flex items-center space-x-6 text-xs text-slate-500">
                  <VoteButton 
                    postId={post.id} 
-                   initialCount={post._count.votes} // This is total count, tricky because user vote is separate
+                   initialCount={post._count.votes} 
                    initialUserVote={post.votes?.[0]?.value || 0}
                  />
-import Link from 'next/link';
-
-// ... (other imports)
-
-// ... inside map()
                  <Link href={`/posts/${post.id}`} className="hover:text-white flex items-center space-x-1 group">
                    <span className="group-hover:text-blue-400">💬</span> <span>{post._count.comments} Comments</span>
                  </Link>

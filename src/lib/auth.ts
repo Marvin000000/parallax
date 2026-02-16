@@ -1,9 +1,11 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import GitHubProvider from "next-auth/providers/github";
+import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { PrismaClient } from "@prisma/client";
 
-// ... existing imports
+const prisma = new PrismaClient();
 
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
@@ -13,10 +15,16 @@ export const authOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
     EmailProvider({
-      server: process.env.EMAIL_SERVER,
+      server: {
+        host: process.env.EMAIL_SERVER_HOST,
+        port: Number(process.env.EMAIL_SERVER_PORT),
+        auth: {
+          user: process.env.EMAIL_SERVER_USER,
+          pass: process.env.EMAIL_SERVER_PASSWORD,
+        },
+      },
       from: process.env.EMAIL_FROM,
     }),
-    // Guest Provider: Treats a UUID as a "password" to log in
     CredentialsProvider({
       id: "guest",
       name: "Guest",
@@ -26,20 +34,17 @@ export const authOptions = {
       async authorize(credentials) {
         if (!credentials?.uuid) return null;
 
-        // Try to find existing guest user
-        let user = await prisma.user.findFirst({
-          where: { email: `${credentials.uuid}@guest.parallax.local` },
-        });
+        const email = `${credentials.uuid}@guest.parallax.local`;
+        let user = await prisma.user.findFirst({ where: { email } });
 
-        // If not found, create new Guest User
         if (!user) {
           user = await prisma.user.create({
             data: {
               name: `Guest-${credentials.uuid.substring(0, 5)}`,
-              email: `${credentials.uuid}@guest.parallax.local`,
+              email,
               image: `https://api.dicebear.com/7.x/identicon/svg?seed=${credentials.uuid}`,
               clusterLabel: "Unassigned",
-              clusterId: 0,
+              topicClusters: {}, // Ensure valid JSON
             },
           });
         }
@@ -47,13 +52,24 @@ export const authOptions = {
       },
     }),
   ],
+  session: {
+    strategy: "jwt" as const,
+  },
   callbacks: {
-    // ... existing callbacks
-    async session({ session, user }: any) {
+    async jwt({ token, user, account }: any) {
+      // First login
+      if (user) {
+        token.id = user.id;
+        token.clusterId = user.clusterId || 0;
+        token.clusterLabel = user.clusterLabel || "Observer";
+      }
+      return token;
+    },
+    async session({ session, token }: any) {
       if (session.user) {
-        session.user.id = user.id;
-        session.user.clusterId = user.clusterId || 0;
-        session.user.clusterLabel = user.clusterLabel || "Observer";
+        session.user.id = token.id;
+        session.user.clusterId = token.clusterId;
+        session.user.clusterLabel = token.clusterLabel;
       }
       return session;
     },
