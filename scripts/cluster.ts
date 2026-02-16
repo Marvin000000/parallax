@@ -1,110 +1,91 @@
 import { PrismaClient } from '@prisma/client';
+import { Matrix, SVD } from 'ml-matrix';
 import { kmeans } from 'ml-kmeans';
 
 const prisma = new PrismaClient();
 
-// The Core Dimensions of our Political Compass
-// Index 0: Tech/Innovation/Future
-// Index 1: Policy/Regulation/Society
-// Index 2: Business/Finance/Markets
-const TAG_VECTORS: Record<string, [number, number, number]> = {
-  'Tech': [1.0, 0.2, 0.2],
-  'Startup': [0.8, 0.0, 0.9],
-  'Policy': [0.2, 1.0, 0.1],
-  'BigTech': [0.9, 0.6, 0.8],
-  'News': [0.1, 0.8, 0.1],
-  'Global': [0.1, 0.9, 0.3],
-  'Science': [0.9, 0.3, 0.0],
-  // Fallback for unknown tags
-  'Unknown': [0.1, 0.1, 0.1],
-};
-
 async function main() {
-  console.log('Starting User Clustering (V1)...');
+  console.log('Starting User Clustering (Collaborative Filtering V1)...');
 
-  // 1. Fetch all users and their votes
+  // 1. Fetch Users + Votes
   const users = await prisma.user.findMany({
-    include: {
-      votes: {
-        where: { value: 1 }, // Only upvotes matter for interest
-        include: {
-          post: {
-            include: { tags: { include: { tag: true } } }
-          }
-        }
-      }
-    }
+    include: { votes: true }
   });
 
-  const activeUsers = users.filter(u => u.votes.length > 0);
-  console.log(`Found ${activeUsers.length} active users to cluster.`);
-
-  if (activeUsers.length < 3) {
-    console.log('Not enough active users for K-Means (Need > 3). Aborting.');
+  // Filter out inactive users (Need > 3 votes to cluster meaningfully)
+  const activeUsers = users.filter(u => u.votes.length >= 3);
+  console.log(`Found ${activeUsers.length} active users.`);
+  
+  if (activeUsers.length < 5) {
+    console.log('Not enough active users for clustering (Need > 5). Aborting.');
     return;
   }
 
-  // 2. Build User Vectors
-  const userVectors: number[][] = [];
-  const userIds: string[] = [];
+  // 2. Identify Unique Post IDs (Columns)
+  const postIds = new Set<string>();
+  activeUsers.forEach(u => u.votes.forEach(v => {
+    if (v.postId) postIds.add(v.postId);
+  }));
+  const postArray = Array.from(postIds);
+  const postIndexMap = new Map(postArray.map((id, i) => [id, i]));
+  
+  const m = activeUsers.length; // Rows
+  const n = postArray.length;   // Columns (Posts)
+  
+  console.log(`Building Matrix: ${m} Users x ${n} Posts`);
 
-  for (const user of activeUsers) {
-    let techScore = 0;
-    let policyScore = 0;
-    let bizScore = 0;
-    let totalTags = 0;
-
+  // 3. Build Sparse Matrix
+  const matrix = Matrix.zeros(m, n);
+  
+  for (let i = 0; i < m; i++) {
+    const user = activeUsers[i];
     for (const vote of user.votes) {
-      if (!vote.post) continue;
-      for (const t of vote.post.tags) {
-        const vec = TAG_VECTORS[t.tag.name] || TAG_VECTORS['Unknown'];
-        techScore += vec[0];
-        policyScore += vec[1];
-        bizScore += vec[2];
-        totalTags++;
+      if (vote.postId && postIndexMap.has(vote.postId)) {
+        const j = postIndexMap.get(vote.postId)!;
+        matrix.set(i, j, vote.value); // +1 or -1
       }
-    }
-
-    if (totalTags > 0) {
-      // Normalize
-      userVectors.push([
-        techScore / totalTags,
-        policyScore / totalTags,
-        bizScore / totalTags
-      ]);
-      userIds.push(user.id);
     }
   }
 
-  // 3. Run K-Means
-  // K=3 for MVP (Tech vs Policy vs Biz/Other)
-  const result = kmeans(userVectors, 3, { initialization: 'kmeans++' });
+  // 4. Dimensionality Reduction (SVD)
+  // We want to reduce N posts -> 3 latent dimensions (Tribes)
+  // U * S * V^T
+  // U contains the user coordinates in the latent space.
+  
+  console.log('Running SVD...');
+  // Note: Full SVD is expensive for large N, use Randomized SVD or ALS in production
+  const svd = new SVD(matrix, { computeLeftSingularVectors: true, computeRightSingularVectors: false, autoTranspose: true });
+  
+  // Get the top 3 components for each user
+  // U is (m x m), we want (m x 3)
+  const U = svd.leftSingularVectors;
+  const latentFeatures = U.to2DArray().map(row => row.slice(0, 3)); // Keep top 3 dimensions
+  
+  console.log('Latent User Vectors (First 3):', latentFeatures.slice(0, 3));
 
-  // 4. Assign Clusters
-  for (let i = 0; i < userIds.length; i++) {
-    const userId = userIds[i];
-    const clusterId = result.clusters[i] + 1; // 1-based index (0 reserved for New)
+  // 5. K-Means Clustering on Latent Space
+  console.log('Running K-Means (K=3)...');
+  const result = kmeans(latentFeatures, 3, { initialization: 'kmeans++' });
+  
+  // 6. Assign Clusters
+  for (let i = 0; i < m; i++) {
+    const user = activeUsers[i];
+    const clusterId = result.clusters[i] + 1; // 1-based index
     
-    // Determine Label based on Centroid
-    const centroid = result.centroids[result.clusters[i]];
-    let label = 'Generalist';
-    
-    // Which axis dominates?
-    const maxVal = Math.max(...centroid);
-    if (maxVal === centroid[0]) label = 'Technologist';
-    else if (maxVal === centroid[1]) label = 'Policy Wonk';
-    else if (maxVal === centroid[2]) label = 'Market Watcher';
+    // Label Logic: Since clusters are abstract now (Latent Factor 1, 2, 3), we can't easily name them "Tech" or "Policy".
+    // We name them generically for now: "Tribe A", "Tribe B", "Tribe C"
+    // Later: Analyze the top posts in each cluster to auto-generate labels.
+    const label = `Tribe ${String.fromCharCode(64 + clusterId)}`; 
 
-    // Update User
     await prisma.user.update({
-      where: { id: userId },
+      where: { id: user.id },
       data: {
         clusterId: clusterId,
         clusterLabel: label
       }
     });
     
-    console.log(`User ${userId.substring(0,5)} -> Cluster ${clusterId} (${label})`);
+    console.log(`User ${user.id.substring(0,5)} -> Cluster ${clusterId} (${label})`);
   }
   
   console.log('Clustering Complete.');
