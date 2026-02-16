@@ -9,8 +9,24 @@ const MIN_VOTES_GLOBAL = 3;
 const MIN_VOTES_TOPIC = 2;
 const TOPICS = ['Tech', 'Startup', 'Policy', 'Science', 'News'];
 
+const MIN_NEW_VOTES = 10; // Threshold for re-clustering (low for MVP)
+
 async function main() {
   console.log('Starting Multi-Topic Clustering...');
+
+  // 0. Check for New Activity (Optimization)
+  // Only re-cluster if we have enough new votes in the last hour
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const newVotesCount = await prisma.vote.count({
+    where: { createdAt: { gte: oneHourAgo } }
+  });
+
+  if (newVotesCount < MIN_NEW_VOTES) {
+    console.log(`Only ${newVotesCount} new votes in the last hour. Skipping clustering.`);
+    return;
+  }
+  
+  console.log(`Found ${newVotesCount} new votes. Proceeding with clustering.`);
 
   // 1. Fetch Users + Votes (with Tags)
   const users = await prisma.user.findMany({

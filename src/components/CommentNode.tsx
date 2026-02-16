@@ -6,8 +6,10 @@ import { VoteButton } from './VoteButton';
 
 type CommentWithChildren = {
   id: string;
+  postId: string;
   content: string;
-  author: { name: string | null; clusterLabel: string | null };
+  authorId: string;
+  author: { id: string; name: string | null; clusterLabel: string | null };
   createdAt: Date;
   votes: { value: number }[];
   _count: { votes: number };
@@ -19,12 +21,15 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
   const [collapsed, setCollapsed] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyContent, setReplyContent] = useState('');
+  
+  // Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(comment.content);
 
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) return alert("Sign in to reply");
     
-    // Optimistic / Simple for MVP: Just reload page after submit
     await fetch('/api/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,10 +39,22 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
     window.location.reload(); 
   };
 
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    await fetch('/api/comments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: comment.id, content: editContent }),
+    });
+    
+    setIsEditing(false);
+    window.location.reload();
+  };
+
   const userVote = comment.votes?.[0]?.value || 0;
-  // Calculate total score roughly (count up - count down logic is hard with just _count, assume _count is total interactions)
-  // For MVP, just show interaction count from _count.votes
-  const score = comment._count.votes; // This is wrong but placeholder until aggregate logic
+  const score = comment._count.votes;
+  const isAuthor = session?.user?.id === comment.authorId;
 
   if (collapsed) {
     return (
@@ -62,10 +79,27 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
             <span>{new Date(comment.createdAt).toLocaleDateString()}</span>
           </div>
 
-          <div className="mt-1 text-slate-300 text-sm whitespace-pre-wrap">{comment.content}</div>
+          {isEditing ? (
+             <form onSubmit={handleEdit} className="mt-2">
+               <textarea
+                 className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm"
+                 value={editContent}
+                 onChange={e => setEditContent(e.target.value)}
+               />
+               <div className="flex space-x-2 mt-2">
+                 <button type="submit" className="text-xs bg-green-600 px-2 py-1 rounded text-white">Save</button>
+                 <button type="button" onClick={() => setIsEditing(false)} className="text-xs text-slate-400">Cancel</button>
+               </div>
+             </form>
+          ) : (
+             <div className="mt-1 text-slate-300 text-sm whitespace-pre-wrap">{comment.content}</div>
+          )}
 
           <div className="mt-2 flex items-center space-x-4 text-xs text-slate-500">
             <button onClick={() => setReplyOpen(!replyOpen)} className="hover:text-white font-bold">Reply</button>
+            {isAuthor && (
+              <button onClick={() => setIsEditing(true)} className="hover:text-white">Edit</button>
+            )}
           </div>
 
           {replyOpen && (

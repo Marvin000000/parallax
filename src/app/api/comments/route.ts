@@ -31,3 +31,25 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(comment);
 }
+
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id, content } = await req.json();
+
+  const comment = await prisma.comment.findUnique({ where: { id } });
+  if (!comment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (comment.authorId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const updated = await prisma.comment.update({
+    where: { id },
+    data: { content }
+  });
+
+  return NextResponse.json(updated);
+}

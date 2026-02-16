@@ -36,3 +36,25 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(newPost);
 }
+
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id, title, url, content } = await req.json();
+
+  const post = await prisma.post.findUnique({ where: { id } });
+  if (!post) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (post.authorId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const updated = await prisma.post.update({
+    where: { id },
+    data: { title, url, content }
+  });
+
+  return NextResponse.json(updated);
+}

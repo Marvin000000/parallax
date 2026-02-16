@@ -6,6 +6,7 @@ import { VoteButton } from '@/components/VoteButton';
 import { AuthStatus } from '@/components/AuthStatus';
 import Link from 'next/link';
 import { ReplyInput } from '@/components/ReplyInput';
+import { EditPostButton } from '@/components/EditPostButton';
 
 const prisma = new PrismaClient();
 
@@ -103,8 +104,9 @@ export default async function PostPage({ params }: { params: { id: string } }) {
               </div>
             )}
 
-            <div className="text-xs text-slate-500">
-              Posted by {post.author.name || 'Anonymous'} • {new Date(post.createdAt).toLocaleString()}
+            <div className="text-xs text-slate-500 flex items-center">
+              <span>Posted by {post.author.name || 'Anonymous'} • {new Date(post.createdAt).toLocaleString()}</span>
+              <EditPostButton post={post} />
             </div>
           </div>
         </div>
