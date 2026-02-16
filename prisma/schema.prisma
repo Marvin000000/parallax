@@ -19,11 +19,10 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Clustering Data
-  clusterId     Int       @default(0) // 0 = Unassigned/New
-  clusterLabel  String?   // e.g. "Cluster A", "Techno-Optimist"
-  // Note: embedding vector is handled via raw SQL or unsupported type if needed, 
-  // but with previewFeatures we can try to use it. For now, we keep it simple.
-  
+  clusterId     Int       @default(0) // Global Cluster (0=Unassigned)
+  clusterLabel  String?   // Global Label
+  topicClusters Json      @default("{}") // Map<Tag, ClusterId>
+
   posts         Post[]
   comments      Comment[]
   votes         Vote[]

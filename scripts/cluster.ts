@@ -1,94 +1,129 @@
 import { PrismaClient } from '@prisma/client';
-import { Matrix, SVD } from 'ml-matrix';
-import { kmeans } from 'ml-kmeans';
+const { Matrix, SVD } = require('ml-matrix');
+const { kmeans } = require('ml-kmeans');
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Starting User Clustering (Collaborative Filtering V1)...');
+// Configuration
+const MIN_VOTES_GLOBAL = 3;
+const MIN_VOTES_TOPIC = 2;
+const TOPICS = ['Tech', 'Startup', 'Policy', 'Science', 'News'];
 
-  // 1. Fetch Users + Votes
+async function main() {
+  console.log('Starting Multi-Topic Clustering...');
+
+  // 1. Fetch Users + Votes (with Tags)
   const users = await prisma.user.findMany({
-    include: { votes: true }
+    include: { 
+      votes: {
+        include: {
+          post: {
+            include: { tags: { include: { tag: true } } }
+          }
+        }
+      }
+    }
   });
 
-  // Filter out inactive users (Need > 3 votes to cluster meaningfully)
-  const activeUsers = users.filter(u => u.votes.length >= 3);
-  console.log(`Found ${activeUsers.length} active users.`);
+  // --- PHASE 1: GLOBAL CLUSTERING ---
+  console.log('--- GLOBAL PHASE ---');
+  await runClustering(users, 'global', MIN_VOTES_GLOBAL);
+
+  // --- PHASE 2: TOPIC CLUSTERING ---
+  for (const topic of TOPICS) {
+    console.log(`--- TOPIC: ${topic} ---`);
+    // Filter votes to only include this topic
+    const topicUsers = users.map(u => ({
+      ...u,
+      votes: u.votes.filter(v => v.post?.tags.some(t => t.tag.name === topic))
+    })).filter(u => u.votes.length >= MIN_VOTES_TOPIC);
+
+    if (topicUsers.length < 5) {
+      console.log(`Not enough users for topic ${topic} (${topicUsers.length} < 5). Skipping.`);
+      continue;
+    }
+
+    await runClustering(topicUsers, topic, MIN_VOTES_TOPIC);
+  }
+  
+  console.log('Clustering Complete.');
+}
+
+async function runClustering(users: any[], scope: string, minVotes: number) {
+  const activeUsers = users.filter(u => u.votes.length >= minVotes);
   
   if (activeUsers.length < 5) {
-    console.log('Not enough active users for clustering (Need > 5). Aborting.');
+    console.log(`[${scope}] Not enough active users. Skipping.`);
     return;
   }
 
-  // 2. Identify Unique Post IDs (Columns)
+  // Identify Unique Post IDs (Columns) for this scope
   const postIds = new Set<string>();
-  activeUsers.forEach(u => u.votes.forEach(v => {
+  activeUsers.forEach(u => u.votes.forEach((v: any) => {
     if (v.postId) postIds.add(v.postId);
   }));
   const postArray = Array.from(postIds);
   const postIndexMap = new Map(postArray.map((id, i) => [id, i]));
   
   const m = activeUsers.length; // Rows
-  const n = postArray.length;   // Columns (Posts)
+  const n = postArray.length;   // Columns
   
-  console.log(`Building Matrix: ${m} Users x ${n} Posts`);
+  console.log(`[${scope}] Matrix: ${m} Users x ${n} Posts`);
 
-  // 3. Build Sparse Matrix
+  // Build Matrix
   const matrix = Matrix.zeros(m, n);
-  
   for (let i = 0; i < m; i++) {
     const user = activeUsers[i];
     for (const vote of user.votes) {
       if (vote.postId && postIndexMap.has(vote.postId)) {
-        const j = postIndexMap.get(vote.postId)!;
-        matrix.set(i, j, vote.value); // +1 or -1
+        matrix.set(i, postIndexMap.get(vote.postId)!, vote.value);
       }
     }
   }
 
-  // 4. Dimensionality Reduction (SVD)
-  // We want to reduce N posts -> 3 latent dimensions (Tribes)
-  // U * S * V^T
-  // U contains the user coordinates in the latent space.
-  
-  console.log('Running SVD...');
-  // Note: Full SVD is expensive for large N, use Randomized SVD or ALS in production
+  // SVD
   const svd = new SVD(matrix, { computeLeftSingularVectors: true, computeRightSingularVectors: false, autoTranspose: true });
-  
-  // Get the top 3 components for each user
-  // U is (m x m), we want (m x 3)
   const U = svd.leftSingularVectors;
-  const latentFeatures = U.to2DArray().map(row => row.slice(0, 3)); // Keep top 3 dimensions
-  
-  console.log('Latent User Vectors (First 3):', latentFeatures.slice(0, 3));
+  const latentFeatures = U.to2DArray().map(row => row.slice(0, 3)); // Top 3 dims
 
-  // 5. K-Means Clustering on Latent Space
-  console.log('Running K-Means (K=3)...');
-  const result = kmeans(latentFeatures, 3, { initialization: 'kmeans++' });
-  
-  // 6. Assign Clusters
+  // K-Means
+  const k = Math.min(3, m - 1); // Cannot have more clusters than users
+  const result = kmeans(latentFeatures, k, { initialization: 'kmeans++' });
+
+  // Save Results
   for (let i = 0; i < m; i++) {
     const user = activeUsers[i];
-    const clusterId = result.clusters[i] + 1; // 1-based index
-    
-    // Label Logic: Since clusters are abstract now (Latent Factor 1, 2, 3), we can't easily name them "Tech" or "Policy".
-    // We name them generically for now: "Tribe A", "Tribe B", "Tribe C"
-    // Later: Analyze the top posts in each cluster to auto-generate labels.
-    const label = `Tribe ${String.fromCharCode(64 + clusterId)}`; 
+    const clusterId = result.clusters[i] + 1;
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        clusterId: clusterId,
-        clusterLabel: label
-      }
-    });
-    
-    console.log(`User ${user.id.substring(0,5)} -> Cluster ${clusterId} (${label})`);
+    if (scope === 'global') {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { 
+          clusterId,
+          clusterLabel: `Global Tribe ${clusterId}`
+        }
+      });
+    } else {
+      // Update JSON field safely
+      // We need to fetch current JSON first to merge, but Prisma update doesn't support deep merge on JSON easily in one query without raw SQL or careful handling.
+      // For simplicity, we fetch fresh user or just rely on the object in memory (which might be stale but okay for batch script).
+      // Actually, we should use update with set.
+      
+      const currentUser = await prisma.user.findUnique({ where: { id: user.id }, select: { topicClusters: true } });
+      const currentClusters = (currentUser?.topicClusters as any) || {};
+      
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          topicClusters: {
+            ...currentClusters,
+            [scope]: clusterId
+          }
+        }
+      });
+    }
   }
-  
-  console.log('Clustering Complete.');
+  console.log(`[${scope}] Updated ${m} users.`);
 }
 
 main()
