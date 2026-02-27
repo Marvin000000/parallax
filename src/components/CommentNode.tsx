@@ -62,7 +62,7 @@ export function CommentNode({ comment, depth = 0 }: { comment: CommentWithChildr
 
   const userVote = comment.votes?.[0]?.value || 0;
   const score = comment._count.votes;
-  const isAuthor = session?.user?.id === comment.authorId;
+  const isAuthor = (session?.user as any)?.id === comment.authorId;
 
   if (collapsed) {
     return (

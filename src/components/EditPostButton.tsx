@@ -15,7 +15,7 @@ export function EditPostButton({ post }: { post: any }) {
   };
 
   // Only show if author
-  if (session?.user?.id !== post.authorId) return null;
+  if ((session?.user as any)?.id !== post.authorId) return null;
 
   return (
     <>

@@ -14,7 +14,7 @@ export function AuthStatus() {
       <div className="flex items-center space-x-4">
         <div className="text-right hidden sm:block">
           <p className="text-sm font-bold text-white">{session.user?.name || "User"}</p>
-          <p className="text-xs text-slate-400">{session.user?.clusterLabel || "Unassigned"}</p>
+          <p className="text-xs text-slate-400">{(session.user as any)?.clusterLabel || "Unassigned"}</p>
         </div>
         <button 
           onClick={() => signOut()}

@@ -100,7 +100,7 @@ async function runClustering(users: any[], scope: string, minVotes: number) {
   // SVD
   const svd = new SVD(matrix, { computeLeftSingularVectors: true, computeRightSingularVectors: false, autoTranspose: true });
   const U = svd.leftSingularVectors;
-  const latentFeatures = U.to2DArray().map(row => row.slice(0, 3)); // Top 3 dims
+  const latentFeatures = U.to2DArray().map((row: number[]) => row.slice(0, 3)); // Top 3 dims
 
   // K-Means
   const k = Math.min(3, m - 1); // Cannot have more clusters than users

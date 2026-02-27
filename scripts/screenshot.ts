@@ -15,7 +15,11 @@ const puppeteer = require('puppeteer');
   await page.goto('http://localhost:3000', { waitUntil: 'networkidle0' });
   
   console.log('Taking screenshot...');
-  await page.screenshot({ path: 'public/feed.png', fullPage: true });
+  // await page.screenshot({ path: 'public/feed.png', fullPage: true });
+  await page.screenshot({ 
+    path: 'public/feed_crop.png', 
+    clip: { x: 0, y: 0, width: 1280, height: 800 } 
+  });
   
   await browser.close();
   console.log('Screenshot saved to public/feed.png');
