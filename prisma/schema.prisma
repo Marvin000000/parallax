@@ -32,6 +32,7 @@ model Post {
   id          String    @id @default(cuid())
   title       String
   url         String?   // External link
+  imageUrl    String?   // Image link
   content     String?   // Text body
   published   Boolean   @default(false)
   createdAt   DateTime  @default(now())

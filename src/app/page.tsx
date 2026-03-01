@@ -11,13 +11,25 @@ import Link from 'next/link';
 
 const prisma = new PrismaClient();
 
-async function getPosts(clusterId?: number, userId?: string) {
-  // If user selected "My Tribe" (clusterId provided), only show content from that cluster.
+async function getPosts(clusterId?: number, userId?: string, tagFilters?: string[]) {
+  // If user selected "My Lens" (clusterId provided), only show content from that cluster.
   // If clusterId is 0 (Observer/New), show everything anyway.
   
-  const where = (clusterId !== undefined && clusterId !== 0)
-    ? { authorClusterId: clusterId }
-    : {};
+  const where: any = {};
+  
+  if (clusterId !== undefined && clusterId !== 0) {
+    where.authorClusterId = clusterId;
+  }
+  
+  if (tagFilters && tagFilters.length > 0) {
+    where.tags = {
+      some: {
+        tag: {
+          name: { in: tagFilters }
+        }
+      }
+    };
+  }
 
   const posts = await prisma.post.findMany({
     where,
@@ -40,14 +52,27 @@ export default async function Home({
   const session = await getServerSession(authOptions);
   
   // Determine Feed Mode
-  const tribeMode = searchParams?.tribe === 'mine';
+  const lensMode = searchParams?.lens === 'mine';
+  const tagsParam = searchParams?.tags;
+  const tagFilters = tagsParam ? (Array.isArray(tagsParam) ? tagsParam : tagsParam.split(',')) : [];
+  
   const userClusterId = session?.user?.clusterId; 
   const userId = session?.user?.id;
 
-  // If "My Tribe" selected but no session, fallback to All
-  const targetCluster = (tribeMode && userClusterId) ? (userClusterId as number) : undefined;
+  // If "My Lens" selected but no session, fallback to All
+  const targetCluster = (lensMode && userClusterId) ? (userClusterId as number) : undefined;
 
-  const posts = await getPosts(targetCluster, userId);
+  const posts = await getPosts(targetCluster, userId, tagFilters);
+  
+  // Fetch popular tags for the filter
+  const popularTags = await prisma.tag.findMany({
+    take: 20,
+    orderBy: {
+      posts: {
+        _count: 'desc'
+      }
+    }
+  });
 
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 p-8">
@@ -65,9 +90,9 @@ export default async function Home({
       </header>
 
       {/* Feed Controls */}
-      <div className="max-w-4xl mx-auto flex justify-between items-center mb-6">
-        <Suspense fallback={<div className="h-8 w-32 bg-slate-800 rounded animate-pulse"></div>}>
-           <FeedFilter />
+      <div className="max-w-4xl mx-auto flex justify-between items-start mb-6">
+        <Suspense fallback={<div className="h-8 w-64 bg-slate-800 rounded animate-pulse"></div>}>
+           <FeedFilter popularTags={popularTags.map(t => t.name)} />
         </Suspense>
         
         <SubmitButton />
@@ -77,7 +102,7 @@ export default async function Home({
       <div className="max-w-4xl mx-auto space-y-6">
         {posts.length === 0 && (
           <div className="text-center text-slate-500 py-12">
-            No posts found in this tribe yet. Switch to "All Tribes".
+            No posts found in this lens yet. Switch to "All Lenses" or remove tags.
           </div>
         )}
 
@@ -86,36 +111,36 @@ export default async function Home({
              {/* Insert Ad every 10 posts */}
              {index > 0 && index % 10 === 0 && <AdCard />}
              
-             <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/50 hover:border-slate-500 transition-colors">
-               <div className="flex justify-between items-start mb-2">
-                 <h2 className="text-lg font-semibold text-blue-100">
-                   <a href={post.url || '#'} target="_blank" rel="noopener noreferrer" className="hover:underline">
+             <Link href={`/posts/${post.id}`} className="block">
+               <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/50 hover:border-slate-500 hover:bg-slate-800 transition-colors cursor-pointer">
+                 <div className="flex justify-between items-start mb-2">
+                   <h2 className="text-lg font-semibold text-blue-100">
                      {post.title}
-                   </a>
-                 </h2>
-                 <div className="flex space-x-2">
-                   {post.tags.map(t => (
-                     <span key={t.tag.id} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 border border-slate-600">
-                       #{t.tag.name}
-                     </span>
-                   ))}
+                   </h2>
+                   <div className="flex space-x-2">
+                     {post.tags.map(t => (
+                       <span key={t.tag.id} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 border border-slate-600">
+                         #{t.tag.name}
+                       </span>
+                     ))}
+                   </div>
+                 </div>
+                 
+                 <div className="mt-3 flex items-center space-x-6 text-xs text-slate-500" onClick={(e) => e.preventDefault()}>
+                   <VoteButton 
+                     postId={post.id} 
+                     initialCount={post._count.votes} 
+                     initialUserVote={post.votes?.[0]?.value || 0}
+                   />
+                   <div className="flex items-center space-x-1 group">
+                     <span className="group-hover:text-blue-400">💬</span> <span>{post._count.comments} Comments</span>
+                   </div>
+                   <span className="text-slate-600">
+                      {new Date(post.createdAt).toLocaleDateString()} • {post.authorClusterId === 0 ? 'Observer' : `Cluster ${post.authorClusterId}`}
+                   </span>
                  </div>
                </div>
-               
-               <div className="mt-3 flex items-center space-x-6 text-xs text-slate-500">
-                 <VoteButton 
-                   postId={post.id} 
-                   initialCount={post._count.votes} 
-                   initialUserVote={post.votes?.[0]?.value || 0}
-                 />
-                 <Link href={`/posts/${post.id}`} className="hover:text-white flex items-center space-x-1 group">
-                   <span className="group-hover:text-blue-400">💬</span> <span>{post._count.comments} Comments</span>
-                 </Link>
-                 <span className="text-slate-600">
-                    {new Date(post.createdAt).toLocaleDateString()} • {post.authorClusterId === 0 ? 'Observer' : `Cluster ${post.authorClusterId}`}
-                 </span>
-               </div>
-             </div>
+             </Link>
           </div>
         ))}
       </div>

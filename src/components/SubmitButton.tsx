@@ -12,7 +12,7 @@ export function SubmitButton() {
         onClick={() => setIsOpen(true)}
         className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold rounded shadow-lg transition-colors"
       >
-        Submit Link
+        Post
       </button>
       
       {isOpen && <SubmitPostModal onClose={() => setIsOpen(false)} />}

@@ -7,6 +7,8 @@ export function SubmitPostModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [content, setContent] = useState('');
   const [tags, setTags] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +22,7 @@ export function SubmitPostModal({ onClose }: { onClose: () => void }) {
       const res = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, url, tags: tagList }),
+        body: JSON.stringify({ title, url, imageUrl, content, tags: tagList }),
       });
 
       if (!res.ok) throw new Error('Failed to post');
@@ -53,14 +55,35 @@ export function SubmitPostModal({ onClose }: { onClose: () => void }) {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">URL</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1">URL (Optional)</label>
             <input 
               type="url" 
-              required
               value={url}
               onChange={e => setUrl(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
               placeholder="https://..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Image URL (Optional)</label>
+            <input 
+              type="url" 
+              value={imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+              placeholder="https://.../image.png"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Content (Optional)</label>
+            <textarea 
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+              placeholder="Post text or description..."
+              rows={4}
             />
           </div>
 
